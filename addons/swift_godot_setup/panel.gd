@@ -14,13 +14,21 @@ enum State { NOT_SET_UP, SET_UP_NOT_BUILT, BUILT }
 
 const PROGRESS_MARKERS := ["˥", "˦", "˧", "˨", "˩", "˨", "˧", "˦"]
 
-@onready var status_label: RichTextLabel = $VBoxContainer/StatusLabel
-@onready var setup_row: HBoxContainer = $VBoxContainer/SetupRow
-@onready var module_edit: LineEdit = $VBoxContainer/SetupRow/ModuleEdit
-@onready var primary_button: Button = $VBoxContainer/ButtonsContainer/PrimaryButton
-@onready var restart_button: Button = $VBoxContainer/ButtonsContainer/RestartButton
-@onready var clean_build_check_button: CheckButton = $VBoxContainer/ButtonsContainer/CleanBuildCheckButton
-@onready var log: RichTextLabel = $VBoxContainer/Log
+@onready var tab_container: TabContainer = $TabContainer
+@onready var status_label: RichTextLabel = $TabContainer/Build/StatusLabel
+@onready var setup_row: HBoxContainer = $TabContainer/Build/SetupRow
+@onready var module_edit: LineEdit = $TabContainer/Build/SetupRow/ModuleEdit
+@onready var primary_button: Button = $TabContainer/Build/ButtonsContainer/PrimaryButton
+@onready var restart_button: Button = $TabContainer/Build/ButtonsContainer/RestartButton
+@onready var clean_build_check_button: CheckButton = $TabContainer/Build/ButtonsContainer/CleanBuildCheckButton
+@onready var log: RichTextLabel = $TabContainer/Build/Log
+
+# Registered-classes inspector tab
+@onready var registered_tab: VBoxContainer = $TabContainer/Registered
+@onready var refresh_button: Button = $TabContainer/Registered/HeaderRow/RefreshButton
+@onready var count_label: Label = $TabContainer/Registered/HeaderRow/CountLabel
+@onready var info_label: RichTextLabel = $TabContainer/Registered/InfoLabel
+@onready var registered_tree: Tree = $TabContainer/Registered/Tree
 
 var _working := false
 var _swift_available := false
@@ -39,6 +47,20 @@ func _ready() -> void:
 		module_edit.editable = not is_working
 	)
 	restart_button.pressed.connect(func(): EditorInterface.restart_editor(false))
+
+	# Registered-classes inspector
+	tab_container.set_tab_title(0, "Build")
+	tab_container.set_tab_title(1, "Registered Classes")
+	registered_tree.set_column_title(0, "Class / member")
+	registered_tree.set_column_title(1, "Detail")
+	registered_tree.set_column_expand(0, true)
+	registered_tree.set_column_expand(1, true)
+	refresh_button.pressed.connect(populate_registered)
+	tab_container.tab_changed.connect(func(idx: int):
+		if idx == tab_container.get_tab_idx_from_control(registered_tab):
+			populate_registered()
+	)
+
 	refresh_state()
 
 # --- state detection ------------------------------------------------------
@@ -87,6 +109,10 @@ func refresh_state() -> void:
 
 	_swift_available = check_toolchain()
 	var state := detect_state()
+
+	# The inspector is only meaningful once SwiftGodot is set up.
+	var reg_idx := tab_container.get_tab_idx_from_control(registered_tab)
+	tab_container.set_tab_hidden(reg_idx, state == State.NOT_SET_UP)
 
 	# Disconnect any previous primary action.
 	for c in primary_button.pressed.get_connections():
@@ -265,3 +291,56 @@ func recompile_swift() -> void:
 	else:
 		# Leave the build output visible and don't restart — the log holds the error.
 		_set_status("[color=#e06c6c][b]Build failed.[/b][/color] See the log above; the editor was not restarted.")
+
+# --- registered-classes inspector -----------------------------------------
+
+## List every ClassDB entry registered by a GDExtension (api type
+## API_EXTENSION / API_EDITOR_EXTENSION) with its declared members. In a
+## project set up by this plugin, these are the classes SwiftGodot registered.
+func populate_registered() -> void:
+	registered_tree.clear()
+	var root := registered_tree.create_item()
+
+	var classes: Array[String] = []
+	for c in ClassDB.get_class_list():
+		var api := ClassDB.class_get_api_type(c)
+		if api == ClassDB.API_EXTENSION or api == ClassDB.API_EDITOR_EXTENSION:
+			classes.append(c)
+	classes.sort()
+
+	for c in classes:
+		var item := registered_tree.create_item(root)
+		item.set_text(0, c)
+		item.set_text(1, "extends %s" % ClassDB.get_parent_class(c))
+		item.set_selectable(1, false)
+
+		_add_member_group(item, "Methods", ClassDB.class_get_method_list(c, true).map(
+			func(m): return "%s()" % m["name"]))
+		_add_member_group(item, "Properties", ClassDB.class_get_property_list(c, true).filter(
+			func(p): return p["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE or p["usage"] & PROPERTY_USAGE_DEFAULT).map(
+			func(p): return p["name"]))
+		_add_member_group(item, "Signals", ClassDB.class_get_signal_list(c, true).map(
+			func(s): return s["name"]))
+		item.collapsed = true
+
+	if classes.is_empty():
+		_set_info("[color=#d3b25f]No extension-registered classes found.[/color] Build SwiftGodot and restart the editor, then refresh.")
+	else:
+		_set_info("These ClassDB entries were registered by a GDExtension. The list reflects the [i]currently loaded[/i] build — rebuild and restart to see source changes.")
+	count_label.text = "%d class(es)" % classes.size()
+
+func _add_member_group(parent: TreeItem, label: String, names: Array) -> void:
+	if names.is_empty():
+		return
+	var group := registered_tree.create_item(parent)
+	group.set_text(0, label)
+	group.set_text(1, "%d" % names.size())
+	group.set_selectable(0, false)
+	group.set_selectable(1, false)
+	for n in names:
+		var leaf := registered_tree.create_item(group)
+		leaf.set_text(0, str(n))
+
+func _set_info(bbcode: String) -> void:
+	info_label.clear()
+	info_label.append_text(bbcode)

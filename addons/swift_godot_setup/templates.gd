@@ -88,8 +88,76 @@ const SAMPLE_SWIFT := """// The Swift Programming Language
 import SwiftGodot
 import Foundation
 
+/// A demo node that wiggles around in a Lissajous pattern, spins, and emits
+/// signals as it goes. It shows off the SwiftGodot features you'll use most —
+/// exported properties (@Export), signals (@Signal), callable methods
+/// (@Callable) and lifecycle overrides (_ready/_process) — and gives the
+/// \"Registered Classes\" tab something interesting to display.
+///
+/// Add it to a 2D scene to watch it move, then replace it with your own
+/// @Godot classes.
 @Godot
-class YourNewSwiftNode: Node {
+class WigglyNode: Node2D {
+	/// How fast the wiggle animates.
+	@Export var speed: Double = 2.0
+	/// How far (in pixels) the node travels from its starting point.
+	@Export var amplitude: Double = 48.0
+	/// Degrees per second the node spins.
+	@Export var spinSpeed: Double = 90.0
+	/// Whether to emit `looped` after every full cycle.
+	@Export var announceLoops: Bool = true
+
+	/// Emitted once, when the node enters the tree and starts wiggling.
+	@Signal var started: SimpleSignal
+	/// Emitted each time a full wiggle cycle completes; carries the loop count.
+	@Signal var looped: SignalWithArguments<Int>
+
+	private var origin = Vector2(x: 0, y: 0)
+	private var elapsed: Double = 0
+	private var loops: Int = 0
+
+	override func _ready() {
+		origin = position
+		started.emit()
+		GD.print(\"WigglyNode is ready — wiggling away!\")
+	}
+
+	override func _process(delta: Double) {
+		elapsed += delta * speed
+
+		// Lissajous path: different frequencies on X and Y.
+		position = Vector2(
+			x: origin.x + Float(amplitude * sin(elapsed * 2.0)),
+			y: origin.y + Float(amplitude * sin(elapsed * 3.0))
+		)
+
+		// Spin (degrees/sec -> radians).
+		rotation += delta * (spinSpeed * Double.pi / 180.0)
+
+		// Count completed cycles and announce them.
+		let completed = Int(elapsed / (2.0 * Double.pi))
+		if completed > loops {
+			loops = completed
+			if announceLoops {
+				looped.emit(loops)
+			}
+		}
+	}
+
+	/// Reset the wiggle back to its starting point. Callable from GDScript.
+	@Callable
+	func resetWiggle() {
+		elapsed = 0
+		loops = 0
+		rotation = 0
+		position = origin
+	}
+
+	/// Number of full cycles completed so far. Callable from GDScript.
+	@Callable
+	func loopCount() -> Int {
+		loops
+	}
 }
 """
 

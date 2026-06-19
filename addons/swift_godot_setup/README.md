@@ -26,7 +26,7 @@ It is the install-into-your-project counterpart of the clone-and-go [SwiftGodotT
    - `addons/swift_godot_extension/swift_godot.gdextension` — the GDExtension descriptor
    - `addons/swift_godot_extension/bin/` — build-output directory (git-ignored)
 3. Click **Rebuild**. The first build resolves and compiles SwiftGodot (several minutes); later builds are fast. The `swift build` output streams into the Log; on success a **Restart editor** button appears — click it to load the freshly built library. (A failed build leaves the output in place and does *not* restart.)
-4. After restarting, add the sample `YourNewSwiftNode` to a scene to confirm it works, then edit the Swift sources and Rebuild as you go. Tick **Clean build** to run `swift package clean` first.
+4. After restarting, add the sample `WigglyNode` to a 2D scene to confirm it works — it wiggles, spins, and emits signals. Then edit the Swift sources and Rebuild as you go. Tick **Clean build** to run `swift package clean` first. The **Registered Classes** tab lists what the extension registered (`WigglyNode` and its exports/signals/methods).
 
 ## How it works
 
