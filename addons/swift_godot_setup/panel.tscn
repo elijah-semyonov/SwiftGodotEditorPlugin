@@ -59,6 +59,13 @@ size_flags_horizontal = 0
 text = "Restart editor"
 tooltip_text = "Reload the editor so the freshly built extension is loaded."
 
+[node name="EditSourcesButton" type="Button" parent="TabContainer/Build/ButtonsContainer"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Edit Swift sources"
+tooltip_text = "Open the Swift package folder in your system file browser."
+
 [node name="CleanBuildCheckButton" type="CheckButton" parent="TabContainer/Build/ButtonsContainer"]
 visible = false
 layout_mode = 2
@@ -104,5 +111,4 @@ scroll_active = false
 layout_mode = 2
 size_flags_vertical = 3
 hide_root = true
-columns = 2
-column_titles_visible = true
+columns = 1

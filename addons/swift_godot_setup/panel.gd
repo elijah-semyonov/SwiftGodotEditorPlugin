@@ -20,6 +20,7 @@ const PROGRESS_MARKERS := ["˥", "˦", "˧", "˨", "˩", "˨", "˧", "˦"]
 @onready var module_edit: LineEdit = $TabContainer/Build/SetupRow/ModuleEdit
 @onready var primary_button: Button = $TabContainer/Build/ButtonsContainer/PrimaryButton
 @onready var restart_button: Button = $TabContainer/Build/ButtonsContainer/RestartButton
+@onready var edit_sources_button: Button = $TabContainer/Build/ButtonsContainer/EditSourcesButton
 @onready var clean_build_check_button: CheckButton = $TabContainer/Build/ButtonsContainer/CleanBuildCheckButton
 @onready var log: RichTextLabel = $TabContainer/Build/Log
 
@@ -47,14 +48,11 @@ func _ready() -> void:
 		module_edit.editable = not is_working
 	)
 	restart_button.pressed.connect(func(): EditorInterface.restart_editor(false))
+	edit_sources_button.pressed.connect(func(): OS.shell_open(ProjectSettings.globalize_path(T.SPM_DIR)))
 
 	# Registered-classes inspector
 	tab_container.set_tab_title(0, "Build")
 	tab_container.set_tab_title(1, "Registered Classes")
-	registered_tree.set_column_title(0, "Class / member")
-	registered_tree.set_column_title(1, "Detail")
-	registered_tree.set_column_expand(0, true)
-	registered_tree.set_column_expand(1, true)
 	refresh_button.pressed.connect(populate_registered)
 	tab_container.tab_changed.connect(func(idx: int):
 		if idx == tab_container.get_tab_idx_from_control(registered_tab):
@@ -110,9 +108,10 @@ func refresh_state() -> void:
 	_swift_available = check_toolchain()
 	var state := detect_state()
 
-	# The inspector is only meaningful once SwiftGodot is set up.
+	# The inspector and "edit sources" action only apply once set up.
 	var reg_idx := tab_container.get_tab_idx_from_control(registered_tab)
 	tab_container.set_tab_hidden(reg_idx, state == State.NOT_SET_UP)
+	edit_sources_button.visible = state != State.NOT_SET_UP
 
 	# Disconnect any previous primary action.
 	for c in primary_button.pressed.get_connections():
@@ -310,17 +309,27 @@ func populate_registered() -> void:
 
 	for c in classes:
 		var item := registered_tree.create_item(root)
-		item.set_text(0, c)
-		item.set_text(1, "extends %s" % ClassDB.get_parent_class(c))
-		item.set_selectable(1, false)
+		item.set_text(0, "%s: %s" % [c, ClassDB.get_parent_class(c)])
 
-		_add_member_group(item, "Methods", ClassDB.class_get_method_list(c, true).map(
-			func(m): return "%s()" % m["name"]))
-		_add_member_group(item, "Properties", ClassDB.class_get_property_list(c, true).filter(
-			func(p): return p["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE or p["usage"] & PROPERTY_USAGE_DEFAULT).map(
-			func(p): return p["name"]))
-		_add_member_group(item, "Signals", ClassDB.class_get_signal_list(c, true).map(
-			func(s): return s["name"]))
+		var methods: Array[String] = []
+		for m in ClassDB.class_get_method_list(c, true):
+			var ret := _type_name(m.get("return", {}))
+			var sig := _callable_signature(m["name"], m["args"])
+			methods.append("%s → %s" % [sig, ret] if ret != "" else sig)
+
+		var props: Array[String] = []
+		for p in ClassDB.class_get_property_list(c, true):
+			if not (p["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE or p["usage"] & PROPERTY_USAGE_DEFAULT):
+				continue
+			props.append("%s: %s" % [p["name"], _type_name(p)])
+
+		var signals: Array[String] = []
+		for s in ClassDB.class_get_signal_list(c, true):
+			signals.append(_callable_signature(s["name"], s["args"]))
+
+		_add_member_group(item, "Methods", methods)
+		_add_member_group(item, "Properties", props)
+		_add_member_group(item, "Signals", signals)
 		item.collapsed = true
 
 	if classes.is_empty():
@@ -329,17 +338,37 @@ func populate_registered() -> void:
 		_set_info("These ClassDB entries were registered by a GDExtension. The list reflects the [i]currently loaded[/i] build — rebuild and restart to see source changes.")
 	count_label.text = "%d class(es)" % classes.size()
 
-func _add_member_group(parent: TreeItem, label: String, names: Array) -> void:
-	if names.is_empty():
+func _add_member_group(parent: TreeItem, label: String, rows: Array) -> void:
+	if rows.is_empty():
 		return
 	var group := registered_tree.create_item(parent)
-	group.set_text(0, label)
-	group.set_text(1, "%d" % names.size())
+	group.set_text(0, "%s [%d]" % [label, rows.size()])
 	group.set_selectable(0, false)
-	group.set_selectable(1, false)
-	for n in names:
+	for r in rows:
 		var leaf := registered_tree.create_item(group)
-		leaf.set_text(0, str(n))
+		leaf.set_text(0, str(r))
+
+## Human-readable type for a PropertyInfo/argument/return dict.
+func _type_name(info: Dictionary) -> String:
+	var t: int = info.get("type", TYPE_NIL)
+	if t == TYPE_NIL:
+		if int(info.get("usage", 0)) & PROPERTY_USAGE_NIL_IS_VARIANT:
+			return "Variant"
+		return ""  # void / untyped
+	if t == TYPE_OBJECT:
+		var cn := str(info.get("class_name", ""))
+		if cn != "":
+			return cn
+	return type_string(t)
+
+## "name(arg1: Type, arg2: Type)" for a method or signal.
+func _callable_signature(method_name: String, args: Array) -> String:
+	var parts: Array[String] = []
+	for a in args:
+		var tn := _type_name(a)
+		var an := str(a.get("name", ""))
+		parts.append("%s: %s" % [an, tn] if tn != "" else an)
+	return "%s(%s)" % [method_name, ", ".join(parts)]
 
 func _set_info(bbcode: String) -> void:
 	info_label.clear()
