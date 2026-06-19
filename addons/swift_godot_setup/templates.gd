@@ -118,6 +118,25 @@ class WigglyNode: Node2D {
 
 	override func _ready() {
 		origin = position
+
+		// Node2D draws nothing on its own, so give it a Sprite2D child showing a
+		// gradient texture — that's what you'll see wiggling when you run the scene.
+		let gradient = Gradient()
+		gradient.setColor(point: 0, color: Color(r: 0.96, g: 0.26, b: 0.21))
+		gradient.setColor(point: 1, color: Color(r: 0.26, g: 0.62, b: 0.96))
+		gradient.addPoint(offset: 0.5, color: Color(r: 0.96, g: 0.76, b: 0.18))
+
+		let texture = GradientTexture2D()
+		texture.gradient = gradient
+		texture.width = 128
+		texture.height = 128
+		texture.fillFrom = Vector2(x: 0, y: 0)
+		texture.fillTo = Vector2(x: 1, y: 1)
+
+		let sprite = Sprite2D()
+		sprite.texture = texture
+		addChild(node: sprite)
+
 		started.emit()
 		GD.print(\"WigglyNode is ready — wiggling away!\")
 	}
