@@ -18,6 +18,7 @@ const PROGRESS_MARKERS := ["˥", "˦", "˧", "˨", "˩", "˨", "˧", "˦"]
 @onready var setup_row: HBoxContainer = $VBoxContainer/SetupRow
 @onready var module_edit: LineEdit = $VBoxContainer/SetupRow/ModuleEdit
 @onready var primary_button: Button = $VBoxContainer/ButtonsContainer/PrimaryButton
+@onready var restart_button: Button = $VBoxContainer/ButtonsContainer/RestartButton
 @onready var clean_build_check_button: CheckButton = $VBoxContainer/ButtonsContainer/CleanBuildCheckButton
 @onready var log: RichTextLabel = $VBoxContainer/Log
 
@@ -34,8 +35,10 @@ func _ready() -> void:
 		_working = is_working
 		primary_button.disabled = is_working
 		clean_build_check_button.disabled = is_working
+		restart_button.disabled = is_working
 		module_edit.editable = not is_working
 	)
+	restart_button.pressed.connect(func(): EditorInterface.restart_editor(false))
 	refresh_state()
 
 # --- state detection ------------------------------------------------------
@@ -78,6 +81,9 @@ func check_toolchain() -> bool:
 func refresh_state() -> void:
 	if not is_node_ready() or _working:
 		return
+
+	# The restart button only appears right after a successful build.
+	restart_button.visible = false
 
 	_swift_available = check_toolchain()
 	var state := detect_state()
@@ -153,24 +159,68 @@ func do_setup() -> void:
 
 # --- build action (adapted from SwiftGodotTemplate) -----------------------
 
-func wait_process_finished(pid: int, progress_text: String) -> void:
+# OS.create_process can't capture a child's output, so we run build steps
+# through a shell with stdout+stderr redirected to this file, then tail it into
+# the Log live.
+const BUILD_LOG := "user://swift_godot_build.log"
+
+func _shell_for(command: String) -> Dictionary:
+	if OS.get_name() == "Windows":
+		return { "exe": "cmd.exe", "args": ["/c", command] }
+	return { "exe": "/bin/sh", "args": ["-c", command] }
+
+## Run `command` via a shell, streaming its output into the Log and an elapsed
+## spinner into the status bar. Returns false if the process couldn't start.
+func _run_streamed(command: String, progress_text: String) -> bool:
+	var log_abs := ProjectSettings.globalize_path(BUILD_LOG)
+	# Truncate before each step so we only tail this run's output.
+	var truncate := FileAccess.open(BUILD_LOG, FileAccess.WRITE)
+	if truncate:
+		truncate.close()
+
+	var full := '%s > "%s" 2>&1' % [command, log_abs]
+	var shell := _shell_for(full)
+	var pid := OS.create_process(shell["exe"], shell["args"], false)
+	if pid == -1:
+		append_log("Couldn't execute: %s" % command)
+		return false
+
 	var start_time := Time.get_ticks_msec()
 	var i := 0
-	var initial_log_text := log.get_parsed_text()
+	var offset := 0
 	while OS.is_process_running(pid):
 		await get_tree().create_timer(0.1).timeout
-		var time_passed := (Time.get_ticks_msec() - start_time) / 1000
-		log.text = "%s%s %s %s s " % [initial_log_text, progress_text, PROGRESS_MARKERS[i], time_passed]
+		offset = _stream_chunk(log_abs, offset)
+		var secs := (Time.get_ticks_msec() - start_time) / 1000
+		_set_status("[b]%s[/b] %s  %d s" % [progress_text, PROGRESS_MARKERS[i], secs])
 		i = (i + 1) % PROGRESS_MARKERS.size()
-	log.text = initial_log_text
+	# Flush anything written between the last poll and process exit.
+	_stream_chunk(log_abs, offset)
+	return true
+
+## Append the portion of the log file past `offset`; returns the new offset.
+## Uses add_text (not append_text) so build output like "[1/273]" isn't parsed
+## as BBCode.
+func _stream_chunk(log_abs: String, offset: int) -> int:
+	var f := FileAccess.open(log_abs, FileAccess.READ)
+	if f == null:
+		return offset
+	var size := f.get_length()
+	if size > offset:
+		f.seek(offset)
+		log.add_text(f.get_buffer(size - offset).get_string_from_utf8())
+		offset = size
+	f.close()
+	return offset
 
 func recompile_swift() -> void:
 	state_changed.emit(true)
 	log.clear()
 
 	if OS.is_sandboxed():
-		append_log("Impossible to launch OS processes. Editor is sandboxed.")
+		append_log("Cannot launch processes — the editor is sandboxed.")
 		state_changed.emit(false)
+		refresh_state()
 		return
 
 	var swift_path := ProjectSettings.globalize_path(T.SPM_DIR)
@@ -179,43 +229,39 @@ func recompile_swift() -> void:
 	if not DirAccess.dir_exists_absolute(target_dir):
 		var err := DirAccess.make_dir_recursive_absolute(target_dir)
 		if err != OK:
-			append_log("Error creating directory '" + target_dir + "'")
+			append_log("Error creating directory '%s'" % target_dir)
 			state_changed.emit(false)
+			refresh_state()
 			return
-		append_log("Building from scratch. This can take a while; subsequent builds are much faster.")
+		append_log("Building from scratch — the first build can take several minutes.")
 
 	if clean_build_check_button.button_pressed:
-		append_log("Running `swift package clean`")
-		var clean_pid := OS.create_process(
-			"swift", ["package", "clean", "--package-path", swift_path, "--build-path", target_dir], false
-		)
-		if clean_pid == -1:
-			append_log("Couldn't execute `swift package clean`")
+		append_log("$ swift package clean")
+		var clean_cmd := 'swift package clean --package-path "%s" --build-path "%s"' % [swift_path, target_dir]
+		if not await _run_streamed(clean_cmd, "Cleaning"):
 			state_changed.emit(false)
+			refresh_state()
 			return
-		await wait_process_finished(clean_pid, "Cleaning")
-		append_log("Cleaned")
 
 	# Keep Godot from importing build artifacts.
 	var gdignore_path := target_dir.path_join(".gdignore")
-	var f := FileAccess.open(gdignore_path, FileAccess.WRITE)
-	if f == null:
-		append_log("Error creating '" + gdignore_path + "'")
-		state_changed.emit(false)
-		return
-	f.close()
+	var gf := FileAccess.open(gdignore_path, FileAccess.WRITE)
+	if gf:
+		gf.close()
 
-	append_log("Building into %s" % target_dir)
-	var pid := OS.create_process(
-		"swift", ["build", "--package-path", swift_path, "--build-path", target_dir], false
-	)
-	if pid == -1:
-		append_log("Couldn't execute `swift build`")
+	append_log("$ swift build --package-path %s --build-path %s\n" % [T.SPM_DIR, T.BIN_DIR])
+	var build_cmd := 'swift build --package-path "%s" --build-path "%s"' % [swift_path, target_dir]
+	if not await _run_streamed(build_cmd, "Building"):
 		state_changed.emit(false)
+		refresh_state()
 		return
 
-	append_log("Running `swift build`")
-	await wait_process_finished(pid, "Building")
-	append_log("Done! Restarting editor.")
-	await get_tree().create_timer(1.0).timeout
-	EditorInterface.restart_editor(false)
+	state_changed.emit(false)
+	if _built_artifact_exists(current_module()):
+		_set_status("[color=#5fd35f][b]Build succeeded.[/b][/color] Click [i]Restart editor[/i] to load the extension.")
+		append_log("\nBuild complete. Click \"Restart editor\" to load the extension.")
+		restart_button.visible = true
+		restart_button.disabled = false
+	else:
+		# Leave the build output visible and don't restart — the log holds the error.
+		_set_status("[color=#e06c6c][b]Build failed.[/b][/color] See the log above; the editor was not restarted.")

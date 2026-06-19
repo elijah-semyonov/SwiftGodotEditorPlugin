@@ -32,6 +32,12 @@ func _get_plugin_icon() -> Texture2D:
 	# On a brand-new install the SVG may not be imported yet during the first
 	# filesystem scan; fall back to no icon rather than erroring.
 	const ICON := "res://addons/swift_godot_setup/swift_godot_logo.svg"
-	if ResourceLoader.exists(ICON):
-		return load(ICON)
-	return null
+	if not ResourceLoader.exists(ICON):
+		return null
+	# The SVG imports at full size, which renders huge on the tab. Resize it to
+	# match the built-in main-screen tabs (16px, scaled for the editor/HiDPI).
+	var tex: Texture2D = load(ICON)
+	var img := tex.get_image()
+	var px := int(round(16.0 * EditorInterface.get_editor_scale()))
+	img.resize(px, px, Image.INTERPOLATE_LANCZOS)
+	return ImageTexture.create_from_image(img)
