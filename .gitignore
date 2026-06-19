@@ -1,0 +1,10 @@
+# Godot
+.godot/
+*.translation
+
+# macOS
+.DS_Store
+
+# Build artifacts (the addon also writes these into host projects)
+addons/swift_godot_extension/bin/
+.build/

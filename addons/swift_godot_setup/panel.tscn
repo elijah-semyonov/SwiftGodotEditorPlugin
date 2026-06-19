@@ -1,0 +1,68 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/swift_godot_setup/panel.gd" id="1"]
+
+[node name="SwiftGodotSetupPanel" type="MarginContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+script = ExtResource("1")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "SwiftGodot"
+
+[node name="StatusLabel" type="RichTextLabel" parent="VBoxContainer"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 56)
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="SetupRow" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="ModuleLabel" type="Label" parent="VBoxContainer/SetupRow"]
+layout_mode = 2
+text = "Module name"
+
+[node name="ModuleEdit" type="LineEdit" parent="VBoxContainer/SetupRow"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+text = "SwiftGodotGame"
+placeholder_text = "SwiftGodotGame"
+tooltip_text = "Swift module / SPM target name. Becomes lib<name>.dylib."
+
+[node name="ButtonsContainer" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="PrimaryButton" type="Button" parent="VBoxContainer/ButtonsContainer"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Set up SwiftGodot"
+
+[node name="CleanBuildCheckButton" type="CheckButton" parent="VBoxContainer/ButtonsContainer"]
+visible = false
+layout_mode = 2
+tooltip_text = "Run \"swift package clean\" before building"
+text = "Clean build"
+
+[node name="LogLabel" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+text = "Log:"
+
+[node name="Log" type="RichTextLabel" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+scroll_following = true

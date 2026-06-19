@@ -1,0 +1,4 @@
+# Keep development-only files out of the Asset Library ZIP downloads.
+/.gitignore       export-ignore
+/.gitattributes   export-ignore
+/readme_resources export-ignore
