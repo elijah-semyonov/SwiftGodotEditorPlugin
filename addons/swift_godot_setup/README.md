@@ -1,6 +1,6 @@
 # SwiftGodot Setup
 
-A Godot 4 editor plugin that turns any existing project into a [SwiftGodot](https://github.com/migueldeicaza/SwiftGodot) project. Install it from the **Asset Library**, enable it, and one click scaffolds a Swift Package Manager project and a `.gdextension`; another click builds it and reloads the editor so your Swift `@Godot` nodes show up.
+A Godot 4 editor plugin that turns any existing project into a [SwiftGodot](https://github.com/migueldeicaza/SwiftGodot) project. Install it from the **Asset Library**, enable it, and one click scaffolds a Swift Package Manager project and a `.gdextension`; another click builds it (streaming the output to a log) so your Swift `@Godot` nodes show up after a restart.
 
 It is the install-into-your-project counterpart of the clone-and-go [SwiftGodotTemplate](https://github.com/elijah-semyonov/SwiftGodotTemplate).
 
@@ -25,12 +25,12 @@ It is the install-into-your-project counterpart of the clone-and-go [SwiftGodotT
    - `swift_godot_game/` — the SPM project (`Package.swift`, `Sources/<Module>/<Module>.swift`), hidden from Godot via `.gdignore`
    - `addons/swift_godot_extension/swift_godot.gdextension` — the GDExtension descriptor
    - `addons/swift_godot_extension/bin/` — build-output directory (git-ignored)
-3. Click **Rebuild**. The first build resolves and compiles SwiftGodot (several minutes); later builds are fast. The editor restarts automatically so the freshly built library loads.
-4. Add the sample `YourNewSwiftNode` to a scene to confirm it works, then edit the Swift sources and Rebuild as you go. Tick **Clean build** to run `swift package clean` first.
+3. Click **Rebuild**. The first build resolves and compiles SwiftGodot (several minutes); later builds are fast. The `swift build` output streams into the Log; on success a **Restart editor** button appears — click it to load the freshly built library. (A failed build leaves the output in place and does *not* restart.)
+4. After restarting, add the sample `YourNewSwiftNode` to a scene to confirm it works, then edit the Swift sources and Rebuild as you go. Tick **Clean build** to run `swift package clean` first.
 
 ## How it works
 
-The plugin runs `swift build --package-path swift_godot_game --build-path addons/swift_godot_extension/bin` via `OS.create_process`. The generated `.gdextension` points at the exact artifacts SwiftPM emits:
+The plugin runs `swift build --package-path swift_godot_game --build-path addons/swift_godot_extension/bin` through a shell (so its output can be captured into the Log). The generated `.gdextension` points at the exact artifacts SwiftPM emits:
 
 ```
 addons/swift_godot_extension/bin/arm64-apple-macosx/debug/lib<Module>.dylib   (your code)
